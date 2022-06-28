@@ -1,145 +1,77 @@
-def precision_k(assigned, extracted, k):
+def exact_f1_k(assigned, extracted, k):
     """
-    Computes the exact match precision at k, 
-    between two lists of keywords. 
-    The precision is defined as the fraction
-    between the number of correctly matched tokens
-    (the intersection of assigned and extracted sets)
-    over the number of extracted (k) tokens.
+    Computes the exatch match f1 measure at k.
     Arguments
     ---------
-    assigned  : A list of manually assigned keywords,
-                (order doesn't matter in the list).
-    extracted : A list of extracted keywords,
-                (order matters in the list).
+    assigned  : A list of human assigned keyphrases.
+    extracted : A list of extracted keyphrases.
     k         : int
-                The maximum number of extracted keywords.
+                The maximum number of extracted keyphrases.
     Returned value
     --------------
               : double
     """
-    return len(set(assigned) & set(extracted[:k])) / k
+    # Exit early, if one of the lists or both are empty.
+    if not assigned or not extracted:
+        return 0.0
 
-def recall_k(assigned, extracted, k):
-    """
-    Computes the exact match recall at k,
-    between two lists of keywords.
-    The average precision is defined as the fraction 
-    between the number of correctly matched tokens 
-    (the intersection of assigned and extracted sets)
-    over the number of assigned tokens.
-    Arguments
-    ---------
-    assigned  : A list of manually assigned keywords,
-                (order doesn't matter in the list).
-    extracted : A list of extracted keywords,
-                (order matters in the list).
-    k         : int
-                The maximum number of extracted keywords.
-    Returned value
-    --------------
-              : double
-    """
-    return len(set(assigned) & set(extracted[:k])) / len(assigned)
-
-def partial_precision_k(assigned, extracted, k):
-    """
-    Computes the average partial precision at k, 
-    between two lists of keywords.
-    The partial precision is defined as the fraction 
-    between the number of correctly partially matched tokens,
-    over the total number of extracted (k) tokens.
-    Arguments
-    ---------
-    assigned  : A list of manually assigned keywords,
-                (order doesn't matter in the list).
-    extracted : A list of extracted keywords,
-                (order matters in the list).
-    k         : int
-                The maximum number of extracted keywords.
-    Returned value
-    --------------
-              : double
-    """
-    # Assigned should always contain the shorter list, while extracted the longest,
-    # as to avoid counting partial matches more times than necessary.
-    assigned, extracted = min((assigned, extracted[:k]), key = len), max((assigned, extracted[:k]), key = len)
-    assigned_sets = [set(keyword.split()) for keyword in assigned]
-    extracted_sets = [set(keyword.split()) for keyword in extracted]
-
-    return sum(
-        1.0 for i in assigned_sets  
-            if any(True for j in extracted_sets if i & j)) / k
-
-def partial_recall_k(assigned, extracted, k):
-    """
-    Computes the average partial recall at k, 
-    between two lists of keywords.
-    The partial recall is defined as the fraction 
-    between the number of correctly partially matched tokens,
-    over the total number of extracted (k) tokens.
-    Arguments
-    ---------
-    assigned  : A list of manually assigned keywords,
-                (order doesn't matter in the list).
-    extracted : A list of extracted keywords,
-                (order matters in the list).
-    k         : int
-                The maximum number of extracted keywords.
-    Returned value
-    --------------
-              : double
-    """
-    # Assigned should always contain the shorter list, while extracted the longest,
-    # as to avoid counting partial matches more times than necessary.
-    assigned_length = len(assigned)
-    assigned, extracted = min((assigned, extracted[:k]), key = len), max((assigned, extracted[:k]), key = len)
-    assigned_sets = [set(keyword.split()) for keyword in assigned]
-    extracted_sets = [set(keyword.split()) for keyword in extracted]
-
-    return sum(
-        1.0 for i in assigned_sets
-            if any(True for j in extracted_sets if i & j)) / assigned_length
-
-def f1_measure_k(assigned, extracted, k, partial):
-    """
-    Computes the f1 measure at k.
-    The f1 measure at k is defined as 
-    the harmonic mean of the
-    precision at k and recall at k.
-    Arguments
-    ---------
-    assigned  : A list of keywords that are to be extracted,
-                (order doesn't matter in the list).
-    extracted : A list of lists of extracted keywords,
-                (order matters in the list).
-    k         : int
-                The maximum number of extracted keywords.
-    partial   : boolean
-                If set to True, partial matching
-                f1 measure at k is calculated.
-    Returned value
-    --------------
-              : double
-    """
-    precision = (
-        partial_precision_k(assigned, extracted, k)
-        if partial else precision_k(assigned, extracted, k)
-    )
-    recall = (
-        partial_recall_k(assigned, extracted, k)
-        if partial else recall_k(assigned, extracted, k)
-    )
+    precision_k = len(set(assigned) & set(extracted)) / k
+    recall_k = len(set(assigned) & set(extracted)) / len(assigned)
     return (
-        2 * precision * recall / (precision + recall)
-        if not precision == recall == 0.0 else 0.0
+        2 * precision_k * recall_k / (precision_k + recall_k)
+        if precision_k and recall_k else 0.0
     )
 
-def main():
-    assigned = ['green big deal', 'green big energy', 'forest', 'smoke', 'mirrors']
-    extracted = ['green horse', 'green small energy', 'wind']
-    print(partial_precision_k(assigned, extracted, 3))
-    print(partial_recall_k(assigned, extracted, 3))
-    print(f1_measure_k(assigned, extracted, 3, partial = True))
 
-if __name__ == '__main__': main()
+def partial_f1_k(assigned, extracted, k):
+    """
+    Computes the exatch match f1 measure at k.
+    Arguments
+    ---------
+    assigned  : A list of human assigned keyphrases.
+    extracted : A list of extracted keyphrases.
+    k         : int
+                The maximum number of extracted keyphrases.
+    Returned value
+    --------------
+              : double
+    """
+    # Exit early, if one of the lists or both are empty.
+    if not assigned or not extracted:
+        return 0.0
+
+    # Store the longest keyphrases first.
+    assigned_sets = sorted([set(keyword.split()) for keyword in assigned], key = len, reverse = True)
+    extracted_sets = sorted([set(keyword.split()) for keyword in extracted], key = len, reverse = True)
+
+    # This list stores True, if the assigned keyphrase has been matched earlier.
+    # To avoid counting duplicate matches.
+    assigned_matches = [False for assigned_set in assigned_sets]
+
+    # For each extracted keyphrase, find the closest match, 
+    # which is the assigned keyphrase it has the most words in common.
+    for extracted_set in extracted_sets:
+        all_matches = [(i, len(assigned_set & extracted_set)) for i, assigned_set in enumerate(assigned_sets)]
+        closest_match = sorted(all_matches, key = lambda x: x[1], reverse = True)[0]
+        assigned_matches[closest_match[0]] = True
+
+    # Calculate the precision and recall metrics based on the partial matches.
+    partial_matches = assigned_matches.count(True)  
+    precision_k = partial_matches / k
+    recall_k = partial_matches / len(assigned)
+    
+    return (
+        2 * precision_k * recall_k / (precision_k + recall_k)
+        if precision_k and recall_k else 0.0
+    )
+
+
+def f1_metric_k(assigned, extracted, k, partial_match = True):
+    """
+    Wrapper function that calculates either the exact
+    or the partial match f1 metric.
+    """
+    return (
+        partial_f1_k(assigned, extracted, k) 
+        if partial_match else exact_f1_k(assigned, extracted, k)
+    )

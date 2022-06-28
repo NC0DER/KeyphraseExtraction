@@ -1,100 +1,75 @@
 import os
-import numpy as np
 import pandas as pd
-import KeyExt.models
 import KeyExt.metrics
 import KeyExt.utils
 
-def run_experiments(dirpath, outpath, top_n):
-    # Initialize the spacy and keybert models.
-    nlp_model, bert_model = KeyExt.utils.load_models()
+def run_experiments(datasets_dir, output_dir, top_n = 10, partial_match = True):
 
     # Make a list of all subdirectories.
-    directories = next(os.walk(dirpath))[1][0:]
+    directories = next(os.walk(datasets_dir))[1][0:]
     data = []
 
+    # Set the metric name and construct the output path for the xlsx.
+    metric_name = f'pF1@{top_n}' if partial_match else f'F1@{top_n}'
+    xlsx_path = os.path.join(output_dir, f'{metric_name}.xlsx')
+    print(f'Calculating the {metric_name} score for all datasets...')
+
     for i, directory in enumerate(directories):
-        print(f'Processing {i} in {len(directories)} datasets.')
-        # Initialize the empty document set.
-        documents = {}
-        language = ''
+        print(f'Processing {i+1} in {len(directories)} datasets.')
 
         # Change current working directory to the dataset directory.
-        os.chdir(os.path.join(dirpath, directory))
+        dataset_path = os.path.join(datasets_dir, directory)
+        os.chdir(dataset_path)
 
-        # Find the language of the current dataset.
-        with open(os.path.join(os.getcwd(), 'language.txt'), 
-                  'r', encoding = 'utf-8-sig', errors = 'ignore') as text:
-            language = text.read().rstrip().lower()
-        
-        # Find document / key filenames and paths.
-        # Each time we enter the subdirectory 
-        # of the current working directory.
-        # First the docs then the keys subdirectory.
+        # Find human assigned keyphrase files and paths.
+        os.chdir(os.path.join(dataset_path, 'keys'))
+        key_paths = list(map(os.path.abspath, sorted(os.listdir())))
 
-        os.chdir(os.path.join(os.getcwd(), 'docsutf8'))
-        docnames = sorted(os.listdir())
-        docpaths = list(map(os.path.abspath, docnames))
+        # Find all methods (directories of keys) and their generated keyphrase files and paths.
+        extracted_path = os.path.join(dataset_path, 'extracted')
+        os.chdir(extracted_path)
+        methods = sorted(next(os.walk('.'))[1])
 
-        os.chdir(os.path.join(os.getcwd(), '../keys'))
-        keynames = sorted(os.listdir())
-        keypaths = list(map(os.path.abspath, keynames))
+        # Initialize the macro(mean) metric vector.
+        macro_metric_vec = [0.0] * len(methods)
 
-        for (docname, docpath, keypath) in zip(docnames, docpaths, keypaths):
-            with open(docpath, 'r', encoding = 'utf-8-sig', errors = 'ignore') as text, \
-                 open(keypath, 'r', encoding = 'utf-8-sig', errors = 'ignore') as keys:
-                documents[docname] = (
-                    [text.read().replace('\n', ' ')]
-                    + [keys.read().splitlines()]
+        # Compare the extracted keys of each method with the human assigned keys.
+        for j, method in enumerate(methods):
+
+            print(f'    * Evaluating {method} for {len(key_paths)} documents.')
+
+            # Find all extracted keys of the method.
+            os.chdir(os.path.join(extracted_path, method))
+            method_paths = list(map(os.path.abspath, sorted(os.listdir())))
+
+            for key_path, method_path in zip(key_paths, method_paths):
+                with open(method_path, 'r', encoding = 'utf-8-sig', errors = 'ignore') as method_keys, \
+                     open(key_path, 'r', encoding = 'utf-8-sig', errors = 'ignore') as human_keys:
+                    
+                    # Read the tags from file and then preprocess them, 
+                    # as to be lowercased, with no punctuation and stemmed.
+                    extracted = KeyExt.utils.preprocess(method_keys.read().split('\n'))
+                    assigned = KeyExt.utils.preprocess(human_keys.read().split('\n'))
+                    macro_metric_vec[j] += KeyExt.metrics.f1_metric_k (
+                    assigned, extracted, k = top_n, partial_match = partial_match
                 )
 
-        mean_f1_measures = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        # Each method produces tags has a default n-gram range from 1 to 3.
-        total = len(documents)
-        skipped = 0
-        for j, (key, (text, actual_tags)) in enumerate(documents.items()):
-            # Keybert needs the text to be larger in terms than 2 * top_n.
-            if len(text.split()) < 2 * top_n:
-                skipped += 1
-                continue
-
-            print(f'Processing {j} in {total} documents.')
-            for k, predicted_tags in enumerate([
-                KeyExt.models.tfidfvectorizer(text, top_n = top_n),
-                KeyExt.models.rake(text, top_n = top_n),
-                KeyExt.models.yake(text, dedupFunc = 'seqm', windowsSize = 1, top_n = top_n),
-                KeyExt.models.keybert(text, bert_model, measure = 'mmr', diversity = 0.7, top_n = top_n),
-                KeyExt.models.keybert(text, bert_model, measure = 'maxsum', diversity = 0.7, top_n = top_n),
-                KeyExt.models.textrank(text, nlp_model, top_n = top_n), 
-                KeyExt.models.singlerank(text, top_n = top_n)
-            ]):
-                # Convert the tags to lowercase, strip punctuation and then apply stemming.
-                actual_tags = KeyExt.utils.preprocess(actual_tags, language)
-                predicted_tags = KeyExt.utils.preprocess(predicted_tags, language)
-
-                # All of f1 measures from each method and text are being summed,
-                # separately for each method, the mean is calculated in the list 
-                # comprehension, found below this nested loop.
-                mean_f1_measures[k] += KeyExt.metrics.f1_measure_k (
-                    actual_tags, predicted_tags, k = top_n, partial = True
-                )
-            KeyExt.utils.clear_screen()
-
-        mean_f1_measures = [
-            sum_f1_measure / (total - skipped) 
-            for sum_f1_measure in mean_f1_measures
+        # The macro (mean) metric score us calculated from each method.
+        macro_metric_vec = [
+            round(metric_sum / len(key_paths), 3)
+            for metric_sum in macro_metric_vec
         ]
-        # Append f1 measure list for each document to the data list of lists,
-        # each list has the dataset name prepended at the start of the row.
-        data.append([directory] + mean_f1_measures)
-        KeyExt.utils.clear_screen()
-        break # Debug line
 
-    # Construct the dataframe.
-    df = pd.DataFrame(data, columns = [
-        f'pF1@{top_n}','Tfidfvectorizer', 'Rake', 'Yake-seqm',
-        'Keybert-mmr', 'Keybert-maxsum',
-        'Textrank', 'Singlerank'
-    ])
-    # Set the index to the first column and save to excel.
-    df.set_index([f'pF1@{top_n}']).to_excel(outpath)
+        # Append the macro metric score for each directory to the data list of lists,
+        # each list has the dataset name prepended at the start of the row.
+        data.append([directory] + macro_metric_vec)
+        os.system('clear')
+
+
+    # Construct the dataframe and then transpose it.
+    df = pd.DataFrame(data, columns = [f'{metric_name}', *methods]).set_index(f'{metric_name}')
+    df = df.transpose()
+
+    # Save the dataframe to excel.
+    df.to_excel(xlsx_path, engine = 'openpyxl')
+    return
