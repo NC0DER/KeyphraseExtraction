@@ -7,6 +7,18 @@ This repository hosts code for the papers:
 ## Datasets
 Available in [this link]()
 
+## Disclaimer 
+This repository contains code for the evaluated approaches.
+The code for these approaches belongs to their respective authors.
+Some code files were modified to enable the evaluation.
+These modifications include:
+* Removing hardcoded paths.
+* Setting `cpu-only` mode for approaches that require a lot of `GPU VRAM`.
+* Updating code to run from `Python 2` to `Python 3`.
+* Amend errors related to old packages or functions with wrong parameters.
+* Disabling stemming performed early by certain approaches in their keyphrase extraction step, 
+  as to use a common stemmer later in the evaluation process.
+
 ## Test Results
 Configure `KeyExt\config.py` and run `KeyExt.py`.
 
