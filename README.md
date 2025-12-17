@@ -5,7 +5,7 @@ This repository hosts code for the papers:
 * [A comparative assessment of state-of-the-art methods for multilingual unsupervised keyphrase extraction](https://link.springer.com/chapter/10.1007/978-3-030-79150-6_50) - [Download](https://github.com/NC0DER/KeyphraseExtraction/releases/tag/KeyphraseExtractionv1.0)  
 
 ## Datasets
-Available in [this link]()
+Available in [this link](https://drive.google.com/drive/folders/1ziElrM1Y3Wp1vLK21OPtsN7Da-bbR7Sb)
 
 ## Disclaimer 
 This repository contains code for the evaluated approaches.
